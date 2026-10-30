@@ -1,6 +1,7 @@
 """
 Project Strikers - static game data.
 
+Game data (Game balance, perks, skills, enemies, map)
 """
 
 # ----------------------------------------------------------------------------
@@ -33,7 +34,7 @@ def exp_needed(level):
 
 
 # ----------------------------------------------------------------------------
-# Permanent skill tree 
+# Permanent skill tree (kept forever, bought with Gold)
 #   cost of next rank = base + step * current_rank
 #   req = (perk_code, min_rank) that must be owned first
 #   tier = row in the tree (0 top .. 2 bottom); max 3 perks per row
@@ -57,6 +58,8 @@ PERKS = [
          desc="+8% shot size and a small splash blast on impact."),
     dict(code="pen", branch="offense", tier=1, name="Armor Break", max=5, base=70, step=50, req=("crit", 1),
          desc="Ignore 6% enemy armor and add knockback per rank."),
+    dict(code="big_hits", branch="offense", tier=1, name="Big Hits", max=1, base=250, step=0, req=("might", 1),
+         desc="+20% projectile size. Also enlarges swords, axes, orbiting orbs and the burning aura."),
     dict(code="multishot", branch="offense", tier=2, name="Projectile Multiplier", max=2, base=600, step=700, req=("aoe", 2),
          desc="+1 projectile on your attacks per rank."),
     dict(code="boss_slayer", branch="offense", tier=2, name="Boss Slayer", max=5, base=150, step=110, req=("pen", 2),
@@ -126,7 +129,7 @@ def _s(id, name, desc, rarity, mx=1, kind="Offense", custom=False, slot=None, ne
 
 SKILLS = [
     # Offensive
-    _s("extra_barrel", "Extra Barrel", "+1 projectile on all attacks.", "uncommon", 3),
+    _s("extra_barrel", "Extra Barrel", "+1 projectile on your attacks, weapons and projectile skills (+1 sword, +1 orbital orb, +1 sentry shot). Does not affect auras.", "uncommon", 3),
     _s("chain_lightning", "Chain Lightning", "Hits have a 25% chance to arc to 3 nearby enemies.", "common", 3),
     _s("executioner", "Executioner", "+50% damage to enemies below 30% HP.", "uncommon"),
     _s("splinter", "Splinter Shot", "Projectiles shatter into 3 shards on impact.", "uncommon"),
@@ -154,9 +157,9 @@ SKILLS = [
     _s("scavenger", "Scavenger", "Enemies have a higher chance to drop healing food or gold.", "uncommon", 3, "Utility"),
     _s("greed", "Greed", "+30% gold this run, but enemies have +10% HP.", "rare", 1, "Utility"),
     _s("adrenaline", "Adrenaline", "+2% move speed for 5s after each kill (stacks to 10).", "rare", 1, "Utility"),
-    _s("blood_magic", "Blood Magic", "Casting an active skill costs 10% of your current HP but boosts skill damage by +80% for 4s.",
+    _s("blood_magic", "Blood Magic", "Casting an active skill costs 15% of your max HP (never kills you: you are left at 1 HP) but doubles your attack for 10s.",
        "rare", 1, "Utility", needs="active"),
-    # Weapons (max 3 per run)
+    # Weapons (Max 3 per run)
     _s("bow", "Bow", "Adds a Bow: piercing arrows that deal 100% of your attack.", "common", 1, "Weapon", slot="weapon"),
     _s("axe", "Axe", "Hurls axes skyward; they crash back down through the screen dealing 150% of your attack to every enemy hit.",
        "uncommon", 1, "Weapon", slot="weapon"),
@@ -166,29 +169,29 @@ SKILLS = [
        "rare", 1, "Weapon", slot="weapon"),
     _s("gunner", "Gunner", "Adds a Gun: fires 3x as fast as your basic attack for 33% of your attack. Attack speed applies.",
        "epic", 1, "Weapon", slot="weapon"),
-    # Active skills (max 3 per run, hotkeys 1-2-3 in the order you get them)
-    _s("healing_spring", "Healing Spring", "Active: a spring heals you 3% max HP per second for 10s. 30s cooldown.",
+    # Active skills (Max 3 per run)
+    _s("healing_spring", "Healing Spring", "Active: a spring heals you 5% max HP per second for 10s. 20s cooldown.",
        "rare", 1, "Active", slot="active"),
     _s("blizzard", "Blizzard", "Active: a blizzard follows you for 5s, slowing enemies and dealing 5% of your attack every 0.5s. 20s cooldown.",
        "rare", 1, "Active", slot="active"),
-    _s("meteor_shower", "Meteor Shower", "Active: a meteor crashes down for 300% of your attack in a huge area. 25s cooldown.",
+    _s("meteor_shower", "Meteor Shower", "Active: a meteor crashes down for 300% of your attack in a gigantic area. 25s cooldown.",
        "epic", 1, "Active", slot="active"),
-    # Epics added by me so the tier has more than a couple of entries
+    # Epic Tier
     _s("titan", "Titan's Might", "+25% attack and +15% max HP.", "epic", 2, "Offense", True),
     _s("gale", "Gale Force", "+20% attack speed and +10% movement speed.", "epic", 2, "Offense", True),
-    # Legendary capstones
-    _s("overclock", "Overclock", "Doubles attack speed for 5s whenever you use an active ability.", "legendary", 1, "Capstone"),
+    # Legendary Tier
+    _s("overclock", "Overclock", "Doubles attack speed for 10s whenever you use an active ability.", "legendary", 1, "Capstone"),
     _s("explosive_finale", "Explosive Finale", "Enemies explode on death, dealing 30% of their Max HP to nearby targets.", "legendary", 1, "Capstone"),
     _s("orbital_barrage", "Orbital Barrage", "Summons floating projectiles that continually circle your character.", "legendary", 1, "Capstone"),
-    _s("time_freeze", "Time Freeze", "Active: on lethal damage, survive and freeze all enemies for 3s (once per run). Triggers by itself.",
+    _s("time_freeze", "Time Freeze", "Active: on lethal damage, survive and freeze all enemies for 3s. 3 minute cooldown. Triggers by itself.",
        "legendary", 1, "Capstone", slot="active"),
-    _s("sentry", "Sentry", "A sentry fights beside you with 50% of your attack, crit and attack speed.", "legendary", 1, "Capstone"),
+    _s("sentry", "Sentry", "A sentry fights beside you with 100% of your attack, crit and attack speed, and fires a long-range laser for 200% of your attack every 5s.", "legendary", 1, "Capstone"),
 ]
 SKILL_BY_ID = {s["id"]: s for s in SKILLS}
 AUTO_ACTIVES = {"time_freeze"}          # occupy an active slot but need no key press
 
 # Active skill cooldowns (seconds)
-ACTIVE_COOLDOWN = {"meteor_shower": 25, "healing_spring": 30, "blizzard": 20}
+ACTIVE_COOLDOWN = {"meteor_shower": 25, "healing_spring": 20, "blizzard": 20}
 
 # Synergy Mastery fusions: (skill_a, skill_b, name, description)
 FUSIONS = [
@@ -200,7 +203,7 @@ FUSIONS = [
 # ----------------------------------------------------------------------------
 # Enemies
 #   plural   -> used for the "<Name> Appear!" announcement the first time they show up
-#   elite    -> tougher mob (gold + XP)
+#   elite    -> tougher mob 
 #   mini     -> mini-boss (rewards a skill pick)       boss -> end-of-run boss
 #   front_armor: fraction of damage ignored when hit from the front
 # ----------------------------------------------------------------------------
@@ -271,9 +274,14 @@ ENEMIES = {
     "guard": _e("Hatch Guard", None, "guard", 0, 170, 0, 12, 19, 0, 0, "bearer", armor=0.10, shield=True, fixed_hp=True),
 }
 
-# Enemy kinds that are fully announced when first spawned (everything else is "quiet")
+# Enemy type announced when first spawned
 # ----------------------------------------------------------------------------
 # Maps 
+#   requires:     map id whose boss must be beaten before this one unlocks
+#   diff:         difficulty multiplier for this map's mini-bosses and boss scales with level
+#   threat_curve: (seconds, threat cap) points, linearly interpolated
+#   phases:       wave phases; `types` are trickle weights, `forms` are formation weights
+#   minis:        pool of mini-bosses - TWO different ones are picked each run
 # ----------------------------------------------------------------------------
 RUN_SECONDS = 20 * 60
 MINI_FIRST_AT = 5 * 60          # first mini-boss; the next one comes 5:00 after it is defeated

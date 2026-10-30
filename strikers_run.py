@@ -2,8 +2,7 @@
 Project Strikers - the gameplay engine for a single run.
 
 `Run` owns every entity and rule (player, enemies, director, skills, weapons, active skills,
-mini-bosses and the final boss). The App in project_strikers.py only feeds it input and draws it.
-Enemy behaviour lives in strikers_foes.py, hostile hazards in strikers_world.py.
+mini-bosses and the final boss). 
 """
 import math
 import os
@@ -19,6 +18,23 @@ from strikers_util import abbr, calc_damage_reduction, clamp
 from strikers_world import WorldMixin, disc
 
 FPS = 60
+TIME_FREEZE_CD = 180 * FPS               # 3 minute cooldown
+SENTRY_LASER_CD = 5 * FPS
+
+_SCALED = {}
+
+
+def scaled(img, m):
+    """Cached copy of a sprite scaled by m (Big Hits perk)."""
+    if m == 1.0:
+        return img
+    key = (id(img), round(m, 2))
+    hit = _SCALED.get(key)
+    if hit is None:
+        w, h = img.get_size()
+        hit = (img, pygame.transform.scale(img, (max(1, int(w * m)), max(1, int(h * m)))))
+        _SCALED[key] = hit
+    return hit[1]
 SCREEN = 900
 TIME_SCALE = float(os.environ.get("STRIKERS_TIME_SCALE", "1"))   # dev: >1 fast-forwards the wave timeline
 RAR = data.RARITIES
@@ -70,7 +86,7 @@ class Run(WorldMixin):
         self.bm_t = 0
         self.surge_cd = 0
         self.adr, self.adr_t = 0, 0
-        self.tf_used = False
+        self.tf_cd = 0                      # Time Freeze cooldown (frames); 0 = ready
         self.orb_ang = 0.0
         self.sword_ang = 0.0
         self.aura_t = 0
@@ -121,12 +137,13 @@ class Run(WorldMixin):
         self.max_hp = (100 + 10 * P("max_hp")) * (1 + 0.10 * S("vitality") + 0.15 * S("titan"))
         if old is not None and self.max_hp > old:
             self.hp += self.max_hp - old
-        self.atk = 12 * (1 + 0.03 * P("might") + 0.10 * S("strength") + 0.25 * S("titan"))
+        self.atk = 12 * (1 + 0.03 * P("might") + 0.10 * S("strength") + 0.25 * S("titan")) * (2.0 if self.bm_t > 0 else 1.0)
         self.crit_chance = 5 + 2 * P("crit") + 5 * S("crit_rate")
         self.crit_dmg = 100 + 5 * P("crit") + 10 * S("crit_dmg")
         self.atk_speed = 1 + 0.05 * P("atk_speed") + 0.15 * S("fast_hands") + 0.20 * S("gale")
         self.base_speed = data.BASE_PLAYER_SPEED * (1 + 0.03 * P("move_speed")) * (1 - 0.05 * S("fortress")) * (1 + 0.10 * S("gale"))
         self.n_proj = 1 + P("multishot") + S("extra_barrel")
+        self.size_mult = 1.0 + 0.20 * P("big_hits")
         self.pickup_r = 70 * (1 + 0.2 * P("magnet"))
         self.xp_mult = 1 + 0.05 * P("yield") + 0.2 * S("scholar")
         self.gold_mult = 1 + 0.05 * P("yield") + 0.3 * S("greed")
@@ -140,6 +157,13 @@ class Run(WorldMixin):
         self.fusions = {f[2] for f in data.FUSIONS if P("synergy") > 0 and S(f[0]) and S(f[1])}
         for name in self.fusions - old_f:
             self.toast("FUSION: " + name + "!", (255, 220, 120))
+
+    def weapon_n(self):
+        """Projectiles per shot for weapons: every Extra Barrel counts in full, Projectile Multiplier at half rate."""
+        return 1 + self.S("extra_barrel") + self.P("multishot") // 2
+
+    def aura_rad(self):
+        return (85 + 15 * (max(1, self.S("burn_aura")) - 1)) * self.size_mult
 
     def hp_scale(self):
         """Exponential-ish run-time growth: gentle early, brutal after ~12 minutes."""
@@ -254,7 +278,7 @@ class Run(WorldMixin):
         if sid == "shatter_shield":
             self.shield_ready = True
         elif sid == "sentry":
-            self.sentry = dict(x=self.px - 55, y=self.py - 45, cd=20)
+            self.sentry = dict(x=self.px - 55, y=self.py - 45, cd=20, laser=SENTRY_LASER_CD // 2, charge=0, aim=0.0)
         self.recompute()
         if sk["rarity"] in ("epic", "legendary"):
             self.pity_high = 0
@@ -381,7 +405,7 @@ class Run(WorldMixin):
     # ----------------------------------------------------------- active skills
     def use_active(self, name):
         if self.S("overclock"):
-            self.oc_t = 300
+            self.oc_t = 600
 
     def cast(self, slot):
         if self.status != "playing":
@@ -393,18 +417,16 @@ class Run(WorldMixin):
         if self.cds.get(sid, 0) > 0:
             return False
         if self.S("blood_magic"):
-            cost = min(0.10 * self.hp, self.hp - 1.0)
+            cost = min(0.15 * self.max_hp, self.hp - 1.0)       # never kills: you are left with 1 HP at worst
             if cost > 0:
                 self.hp -= cost
                 self.float_text(self.px, self.py - 40, "-%d HP" % cost, (200, 40, 70))
-            self.bm_t = 240
+            self.bm_t = 600
+            self.recompute()                                    # attack x2 for 10s
         getattr(self, "cast_" + sid)()
         self.cds[sid] = data.ACTIVE_COOLDOWN[sid] * 60.0
         self.use_active(sid)
         return True
-
-    def skill_mult(self):
-        return 1.8 if self.bm_t > 0 else 1.0
 
     def dense_spot(self, maxd=720):
         best, bn = None, -1
@@ -423,7 +445,7 @@ class Run(WorldMixin):
 
     def cast_meteor_shower(self):
         x, y = self.dense_spot()
-        self.meteors.append(dict(x=x, y=y, t=50, total=50, r=155))
+        self.meteors.append(dict(x=x, y=y, t=50, total=50, r=310))
         self.banner("METEOR SHOWER!", (255, 150, 60), 50)
 
     def cast_healing_spring(self):
@@ -481,8 +503,8 @@ class Run(WorldMixin):
         return True
 
     def lethal(self):
-        if self.S("time_freeze") and not self.tf_used:
-            self.tf_used = True
+        if self.S("time_freeze") and self.tf_cd <= 0:
+            self.tf_cd = TIME_FREEZE_CD
             self.hp = max(1.0, 0.15 * self.max_hp)
             self.freeze = 180
             self.rev_invuln = 90
@@ -523,8 +545,6 @@ class Run(WorldMixin):
             return 0
         if src != "env":
             dmg *= self.out_mult()
-            if src == "skill":
-                dmg *= self.skill_mult()
             if (e.elite or e.mini or e.boss) and self.P("boss_slayer"):
                 dmg *= 1 + 0.05 * self.P("boss_slayer")
             if self.S("executioner") and e.hp < 0.3 * e.max_hp:
@@ -719,7 +739,7 @@ class Run(WorldMixin):
         for i in range(n):
             a = base + (i - (n - 1) / 2.0) * 0.13
             dmg, crit = self.roll_crit(atk, crit_c, crit_d)
-            r = 5 * (1 + 0.08 * self.aoe_lvl) * size_mult
+            r = 5 * (1 + 0.08 * self.aoe_lvl) * size_mult * self.size_mult
             self.bullets.append(self.mk_bullet(sx, sy, a, 11, dmg, crit, r, 70, img="bolt_crit" if crit else "bolt"))
 
     def nearest(self, x, y, maxd):
@@ -964,12 +984,12 @@ class Run(WorldMixin):
         if not tgt:
             self.wcd["bow"] = 6
             return
-        n = 1 + (self.n_proj - 1) // 2
+        n = self.weapon_n()
         base = math.atan2(tgt.y - self.py, tgt.x - self.px)
         for i in range(n):
             a = base + (i - (n - 1) / 2.0) * 0.14
             dmg, crit = self.roll_crit(self.atk * 1.0)
-            self.bullets.append(self.mk_bullet(self.px, self.py, a, 13, dmg, crit, 6, 80, img="arrow", weapon=True, pierce=3))
+            self.bullets.append(self.mk_bullet(self.px, self.py, a, 13, dmg, crit, 6 * self.size_mult, 80, img="arrow", weapon=True, pierce=3))
         self.wcd["bow"] = max(6, int(34 / aspd))
 
     def w_gunner(self, aspd):
@@ -977,17 +997,21 @@ class Run(WorldMixin):
         if not tgt:
             self.wcd["gunner"] = 5
             return
-        a = math.atan2(tgt.y - self.py, tgt.x - self.px) + random.uniform(-0.05, 0.05)
-        dmg, crit = self.roll_crit(self.atk * 0.33)
-        if len(self.bullets) < 300:
-            self.bullets.append(self.mk_bullet(self.px, self.py, a, 14, dmg, crit, 4, 55, img="gunshot", weapon=True))
+        n = self.weapon_n()
+        base = math.atan2(tgt.y - self.py, tgt.x - self.px) + random.uniform(-0.05, 0.05)
+        for i in range(n):
+            if len(self.bullets) >= 300:
+                break
+            a = base + (i - (n - 1) / 2.0) * 0.09
+            dmg, crit = self.roll_crit(self.atk * 0.33)
+            self.bullets.append(self.mk_bullet(self.px, self.py, a, 14, dmg, crit, 4 * self.size_mult, 55, img="gunshot", weapon=True))
         self.wcd["gunner"] = max(2, int(8 / aspd))
 
     def w_axe(self, aspd):
         if not self.nearest(self.px, self.py, 800):
             self.wcd["axe"] = 10
             return
-        n = 1 + (self.n_proj - 1) // 2
+        n = self.weapon_n()
         for _ in range(n):
             dmg, crit = self.roll_crit(self.atk * 1.5)
             self.axes.append(dict(x=self.px, y=self.py - 10, vx=random.uniform(-3.4, 3.4), vy=-random.uniform(11.0, 13.5),
@@ -999,7 +1023,9 @@ class Run(WorldMixin):
         if not tgt:
             self.wcd["acid_potion"] = 10
             return
-        self.potions.append(dict(sx=self.px, sy=self.py, tx=tgt.x + random.uniform(-24, 24), ty=tgt.y + random.uniform(-24, 24), t=0, total=40))
+        for i in range(self.weapon_n()):
+            j = 24 if i == 0 else 80
+            self.potions.append(dict(sx=self.px, sy=self.py, tx=tgt.x + random.uniform(-j, j), ty=tgt.y + random.uniform(-j, j), t=0, total=40))
         self.wcd["acid_potion"] = max(30, int(105 / aspd))
 
     def w_spinning_swords(self, aspd):
@@ -1009,13 +1035,15 @@ class Run(WorldMixin):
         if "spinning_swords" not in self.weapons:
             return
         self.sword_ang += 0.085 * min(2.0, 0.7 + 0.3 * self.atk_speed_now())
-        for k in range(4):
-            a = self.sword_ang + k * math.pi / 2
+        n = 4 + self.S("extra_barrel")
+        hit_r = 16 * self.size_mult
+        for k in range(n):
+            a = self.sword_ang + k * 2 * math.pi / n
             sx, sy = self.px + math.cos(a) * 80, self.py + math.sin(a) * 80
             for e in self.enemies:
                 if e.untargetable or e.sw_cd > 0:
                     continue
-                if abs(e.x - sx) < e.r + 16 and abs(e.y - sy) < e.r + 16 and math.hypot(e.x - sx, e.y - sy) < e.r + 16:
+                if abs(e.x - sx) < e.r + hit_r and abs(e.y - sy) < e.r + hit_r and math.hypot(e.x - sx, e.y - sy) < e.r + hit_r:
                     e.sw_cd = 26
                     dmg, crit = self.roll_crit(self.atk * 1.2)
                     d = math.hypot(e.x - self.px, e.y - self.py) or 1.0
@@ -1033,7 +1061,7 @@ class Run(WorldMixin):
                 for e in self.enemies:
                     if e.untargetable or id(e) in a["hits"]:
                         continue
-                    if abs(e.x - a["x"]) < e.r + 22 and abs(e.y - a["y"]) < e.r + 22:
+                    if abs(e.x - a["x"]) < e.r + 22 * self.size_mult and abs(e.y - a["y"]) < e.r + 22 * self.size_mult:
                         a["hits"].add(id(e))
                         self.damage_enemy(e, a["dmg"], a["crit"], "aoe")
                         self.spark(a["x"], a["y"], (255, 220, 160), 3)
@@ -1046,8 +1074,8 @@ class Run(WorldMixin):
         for p in self.potions:
             p["t"] += 1
             if p["t"] >= p["total"]:
-                self.ppools.append(dict(x=p["tx"], y=p["ty"], r=64, life=210, tick=0))
-                self.fx.append(dict(kind="ring", x=p["tx"], y=p["ty"], r=6, max_r=64, ttl=12, color=(120, 240, 90)))
+                self.ppools.append(dict(x=p["tx"], y=p["ty"], r=64 * self.size_mult, life=210, tick=0))
+                self.fx.append(dict(kind="ring", x=p["tx"], y=p["ty"], r=6, max_r=64 * self.size_mult, ttl=12, color=(120, 240, 90)))
             else:
                 keep.append(p)
         self.potions = keep
@@ -1069,6 +1097,8 @@ class Run(WorldMixin):
                 self.cds[sid] = max(0.0, self.cds[sid] - rate)
         if self.bm_t > 0:
             self.bm_t -= 1
+            if self.bm_t == 0:
+                self.recompute()
         keep = []
         for m in self.meteors:
             m["t"] -= 1
@@ -1092,7 +1122,7 @@ class Run(WorldMixin):
         for s in self.springs:
             s["life"] -= 1
             if math.hypot(self.px - s["x"], self.py - s["y"]) < s["r"]:
-                self.heal(0.03 * self.max_hp / FPS, "spring")
+                self.heal(0.05 * self.max_hp / FPS, "spring")
             if s["life"] > 0:
                 keep.append(s)
         self.springs = keep
@@ -1110,6 +1140,39 @@ class Run(WorldMixin):
             if b["t"] > 0:
                 keep.append(b)
         self.blizzards = keep
+
+    def sentry_laser(self, s):
+        """Every few seconds the sentry charges and fires a screen-long laser for 200% of your attack."""
+        length = 1300.0
+        if s["charge"] > 0:
+            s["charge"] -= 1
+            ex, ey = s["x"] + math.cos(s["aim"]) * length, s["y"] + math.sin(s["aim"]) * length
+            if s["charge"] > 0:
+                self.fx.append(dict(kind="line", x=s["x"], y=s["y"], x2=ex, y2=ey, ttl=2, color=(120, 220, 255)))
+                return
+            self.fx.append(dict(kind="beamflash", x=s["x"], y=s["y"], x2=ex, y2=ey, ttl=8))
+            self.fx.append(dict(kind="line", x=s["x"], y=s["y"], x2=ex, y2=ey, ttl=8, color=(255, 255, 255)))
+            dx, dy = math.cos(s["aim"]), math.sin(s["aim"])
+            half = 14 * self.size_mult
+            for e in self.enemies:
+                if e.untargetable or e.hidden:
+                    continue
+                t = (e.x - s["x"]) * dx + (e.y - s["y"]) * dy
+                if t < 0 or t > length:
+                    continue
+                if abs((e.x - s["x"]) * dy - (e.y - s["y"]) * dx) <= e.r + half:
+                    dmg, crit = self.roll_crit(self.atk * 2.0)
+                    self.damage_enemy(e, dmg, crit, "aoe")
+            return
+        s["laser"] -= 1
+        if s["laser"] <= 0:
+            tgt = self.nearest(s["x"], s["y"], 1200)
+            if tgt:
+                s["aim"] = math.atan2(tgt.y - s["y"], tgt.x - s["x"])
+                s["charge"] = 24
+                s["laser"] = SENTRY_LASER_CD
+            else:
+                s["laser"] = 30
 
     def desperate_surge(self):
         self.surge_cd = 3600
@@ -1140,7 +1203,7 @@ class Run(WorldMixin):
         frozen = self.freeze > 0
         if frozen:
             self.freeze -= 1
-        for name in ("invuln", "rev_invuln", "flash_p", "shake", "dash_cd", "oc_t", "surge_cd"):
+        for name in ("invuln", "rev_invuln", "flash_p", "shake", "dash_cd", "oc_t", "surge_cd", "tf_cd"):
             v = getattr(self, name)
             if v > 0:
                 setattr(self, name, v - 1)
@@ -1233,7 +1296,7 @@ class Run(WorldMixin):
         bn = self.S("burn_aura")
         if bn:
             self.aura_t += 1
-            rad = 85 + 15 * (bn - 1)
+            rad = self.aura_rad()
             if self.aura_t % 12 == 0:
                 for e in self.enemies:
                     if not e.untargetable and math.hypot(e.x - self.px, e.y - self.py) < rad + e.r:
@@ -1245,13 +1308,14 @@ class Run(WorldMixin):
                     self.fx.append(dict(kind="line", x=self.px, y=self.py, x2=e.x, y2=e.y, ttl=8, color=(190, 230, 255)))
         if self.S("orbital_barrage"):
             self.orb_ang += 0.06
-            for k in range(3):
-                a = self.orb_ang + k * 2.094
+            n_orb = 3 + self.S("extra_barrel")
+            for k in range(n_orb):
+                a = self.orb_ang + k * 2 * math.pi / n_orb
                 ox, oy = self.px + math.cos(a) * 95, self.py + math.sin(a) * 95
                 for e in self.enemies:
                     if e.untargetable or e.orb_cd > 0:
                         continue
-                    if math.hypot(e.x - ox, e.y - oy) < e.r + 10:
+                    if math.hypot(e.x - ox, e.y - oy) < e.r + 10 * self.size_mult:
                         e.orb_cd = 20
                         self.damage_enemy(e, 0.6 * self.atk, False, "aoe")
         if self.sentry:
@@ -1262,8 +1326,9 @@ class Run(WorldMixin):
             if s["cd"] <= 0:
                 tgt = self.nearest(s["x"], s["y"], 560)
                 if tgt:
-                    self.fire_volley(tgt, self.atk * 0.5, self.crit_chance * 0.5, self.crit_dmg * 0.5, 1, 0.8, (s["x"], s["y"]))
-                s["cd"] = max(8, int(24 / max(0.5, self.atk_speed_now() * 0.5)))
+                    self.fire_volley(tgt, self.atk, self.crit_chance, self.crit_dmg, 1 + self.S("extra_barrel"), 1.0, (s["x"], s["y"]))
+                s["cd"] = max(5, int(24 / self.atk_speed_now()))
+            self.sentry_laser(s)
 
         # ---- player attacks
         self.fire_cd -= 1
@@ -1493,7 +1558,7 @@ class Run(WorldMixin):
             surf.blit(art.misc("food"), art.misc("food").get_rect(center=(int(g.x) + ox, int(g.y) + oy)))
         bn = self.S("burn_aura")
         if bn:
-            art.pixel_ring(surf, self.px + ox, self.py + oy, 85 + 15 * (bn - 1), (255, 120, 40), density=0.5)
+            art.pixel_ring(surf, self.px + ox, self.py + oy, self.aura_rad(), (255, 120, 40), density=0.5)
         for e in sorted(self.enemies, key=lambda q: q.y):
             e.draw(surf, ox, oy)
         for f in self.fx:
@@ -1504,9 +1569,10 @@ class Run(WorldMixin):
             art.pixel_disc(surf, self.sentry["x"] + ox, self.sentry["y"] + oy, 9, (120, 220, 255))
             art.pixel_ring(surf, self.sentry["x"] + ox, self.sentry["y"] + oy, 12, (255, 255, 255), density=0.6)
         if self.S("orbital_barrage"):
-            for k in range(3):
-                a = self.orb_ang + k * 2.094
-                art.pixel_disc(surf, self.px + ox + math.cos(a) * 95, self.py + oy + math.sin(a) * 95, 9, (255, 190, 60))
+            n_orb = 3 + self.S("extra_barrel")
+            for k in range(n_orb):
+                a = self.orb_ang + k * 2 * math.pi / n_orb
+                art.pixel_disc(surf, self.px + ox + math.cos(a) * 95, self.py + oy + math.sin(a) * 95, 9 * self.size_mult, (255, 190, 60))
         blink = self.invuln > 0 and (self.frame // 3) % 2 == 0
         if not blink:
             mode = "flash" if self.flash_p > 0 else "normal"
@@ -1522,26 +1588,28 @@ class Run(WorldMixin):
             art.pixel_ring(surf, self.px + ox, self.py + oy, 18, (130, 90, 200), density=0.9)
         if "spinning_swords" in self.weapons:
             sw = art.misc("sword")
-            for k in range(4):
-                a = self.sword_ang + k * math.pi / 2
-                img = art.rot(sw, a)
+            n_sw = 4 + self.S("extra_barrel")
+            for k in range(n_sw):
+                a = self.sword_ang + k * 2 * math.pi / n_sw
+                img = scaled(art.rot(sw, a), self.size_mult)
                 surf.blit(img, img.get_rect(center=(int(self.px + math.cos(a) * 80) + ox, int(self.py + math.sin(a) * 80) + oy)))
         for b in self.bullets:
             if b.img in ("arrow", "gunshot"):
                 img = art.rot(art.misc(b.img), math.atan2(b.vy, b.vx))
             else:
                 img = art.misc(b.img)
+            img = scaled(img, self.size_mult)
             surf.blit(img, img.get_rect(center=(int(b.x) + ox, int(b.y) + oy)))
         axe = art.misc("axe")
         for a in self.axes:
-            img = art.rot(axe, a["spin"])
+            img = scaled(art.rot(axe, a["spin"]), self.size_mult)
             surf.blit(img, img.get_rect(center=(int(a["x"]) + ox, int(a["y"]) + oy)))
         pot = art.misc("potion")
         for p in self.potions:
             frac = p["t"] / float(p["total"])
             x = p["sx"] + (p["tx"] - p["sx"]) * frac
             y = p["sy"] + (p["ty"] - p["sy"]) * frac - math.sin(frac * math.pi) * 90
-            img = art.rot(pot, frac * 14)
+            img = scaled(art.rot(pot, frac * 14), self.size_mult)
             surf.blit(img, img.get_rect(center=(int(x) + ox, int(y) + oy)))
         for m in self.meteors:
             frac = m["t"] / float(m["total"])
@@ -1633,7 +1701,7 @@ class Run(WorldMixin):
         if self.root_t > 0:
             tags.append(("ROOTED  (dash breaks free)", (210, 160, 255)))
         if self.bm_t > 0:
-            tags.append(("BLOOD MAGIC  skill dmg +80%", (255, 90, 120)))
+            tags.append(("BLOOD MAGIC  attack x2  %ds" % (self.bm_t // 60 + 1), (255, 90, 120)))
         if self.S("glass_cannon"):
             tags.append(("GLASS CANNON", (255, 190, 120)))
         for text, col in tags:
@@ -1705,12 +1773,16 @@ class Run(WorldMixin):
                 if ic:
                     surf.blit(ic, (bx + 14, 822))
                 if sid in data.AUTO_ACTIVES:
-                    used = self.tf_used
-                    art.draw_text(surf, "USED" if used else "AUTO", (bx + 26, 859), 13, (130, 130, 140) if used else (170, 225, 255), shadow=False)
-                    if used:
-                        s = pygame.Surface((52, 50), pygame.SRCALPHA)
-                        s.fill((10, 8, 16, 150))
+                    cdv = self.tf_cd
+                    if cdv > 0:
+                        h = max(1, int(50 * cdv / float(TIME_FREEZE_CD)))
+                        s = pygame.Surface((52, h), pygame.SRCALPHA)
+                        s.fill((10, 8, 16, 190))
                         surf.blit(s, (bx, 818))
+                        sec = int(cdv / 60.0 + 0.99)
+                        art.draw_text(surf, "%d:%02d" % divmod(sec, 60), (bx + 26, 846), 16, art.CREAM)
+                    else:
+                        art.draw_text(surf, "AUTO", (bx + 26, 859), 13, (170, 225, 255), shadow=False)
                 else:
                     key_i += 1
                     cdv = self.cds.get(sid, 0)
