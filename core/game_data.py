@@ -1,7 +1,8 @@
 """
-Project Strikers - static game data.
+Project Strikers - CORE layer: static game data.
 
-Game data (Game balance, perks, skills, enemies, map)
+Game data (game balance, perks, skills, enemies, maps) plus a few shared constants.
+Pure data: no pygame, no database, no drawing.
 """
 
 # ----------------------------------------------------------------------------
@@ -9,6 +10,17 @@ Game data (Game balance, perks, skills, enemies, map)
 # ----------------------------------------------------------------------------
 RARITIES = ["common", "uncommon", "rare", "epic", "legendary"]
 RARITY_LABEL = {r: r.capitalize() for r in RARITIES}
+RARITY_COLORS = {                                   # (r, g, b) - used by the engine's toasts and by the UI
+    "common": (196, 196, 204),
+    "uncommon": (96, 206, 108),
+    "rare": (86, 156, 255),
+    "epic": (194, 106, 244),
+    "legendary": (255, 172, 44),
+}
+
+# Movement actions that can be re-bound, with their default pygame key codes (W S A D)
+ACTIONS = ["up", "down", "left", "right"]
+DEFAULT_KEYS = {"up": 119, "down": 115, "left": 97, "right": 100}
 
 # Base rarity weights: interpolated from level 1 to RARITY_SCALE_LEVEL, then flat.
 RARITY_EARLY_WEIGHTS = [80, 12, 5, 2, 1]      # 80% common, 1% legendary

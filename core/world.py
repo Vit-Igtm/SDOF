@@ -1,14 +1,13 @@
 """
-Project Strikers - hostile world objects (zones, pools, beams, mines, haze, walls, status effects).
+Project Strikers - CORE layer: hostile world objects.s).
 
 """
 import math
 import random
 
 import pygame
+from core.util import seg_dist
 
-import strikers_art as art
-from strikers_util import seg_dist
 
 SCREEN = 900
 MAX_EBULLETS = 520
@@ -20,19 +19,6 @@ POOL_COL = {"acid": (110, 200, 50), "fire": (240, 110, 30), "sludge": (80, 200, 
             "sap": (150, 80, 210), "curse": (150, 90, 210)}
 POOL_EDGE = {"acid": (190, 255, 90), "fire": (255, 210, 90), "sludge": (170, 255, 150), "spore": (220, 255, 150),
              "sap": (220, 170, 255), "curse": (220, 170, 255)}
-
-_circ = {}
-
-
-def disc(surf, x, y, r, color, alpha):
-    r = max(2, int(r) // 2 * 2)
-    key = (r, color, alpha // 12)
-    s = _circ.get(key)
-    if s is None:
-        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, color + (alpha,), (r, r), r)
-        _circ[key] = s
-    surf.blit(s, (int(x) - r, int(y) - r))
 
 
 class WorldMixin:
@@ -363,118 +349,4 @@ class WorldMixin:
                     self.px += dx / d * (self.pr - d)
                     self.py += dy / d * (self.pr - d)
 
-    # ----------------------------------------------------------------- draw
-    def draw_world_under(self, surf, ox, oy):
-        for p in self.pools:
-            fade = min(1.0, p["life"] / 60.0)
-            col = POOL_COL.get(p["kind"], (110, 200, 50))
-            disc(surf, p["x"] + ox, p["y"] + oy, p["r"], col, int(120 * fade))
-            pygame.draw.circle(surf, POOL_EDGE.get(p["kind"], (190, 255, 90)), (int(p["x"]) + ox, int(p["y"]) + oy), int(p["r"]), 2)
-        for h in self.hazes:
-            fade = min(1.0, h["life"] / 80.0)
-            disc(surf, h["x"] + ox, h["y"] + oy, h["r"], (255, 190, 90), int(70 * fade))
-            disc(surf, h["x"] + ox, h["y"] + oy, h["r"] * 0.6, (255, 150, 200), int(60 * fade))
-            art.pixel_ring(surf, h["x"] + ox, h["y"] + oy, h["r"], (255, 220, 120), density=0.35)
-        for z in self.zones:
-            if z["total"] <= 2:
-                continue
-            col = ZONE_COL.get(z["kind"], (255, 90, 90))
-            frac = 1 - z["t"] / float(z["total"])
-            disc(surf, z["x"] + ox, z["y"] + oy, z["r"] * max(0.1, frac), col, 90)
-            if (z["t"] // 4) % 2 == 0 or z["total"] < 24:
-                art.pixel_ring(surf, z["x"] + ox, z["y"] + oy, z["r"], col, density=0.8)
-        for q in self.ringq:
-            if (q["t"] // 4) % 2 == 0:
-                art.pixel_ring(surf, q["x"] + ox, q["y"] + oy, q["radius"], (255, 80, 80), density=0.9)
-        for l in self.lobs:
-            frac = l["t"] / float(l["total"])
-            art.pixel_ring(surf, l["tx"] + ox, l["ty"] + oy, l["r"] * (0.35 + 0.65 * frac), (255, 80, 80), density=0.8)
-            col = {"fire": (255, 140, 40)}.get(l["pool_kind"], (150, 230, 70))
-            if l["arc"]:
-                x = l["sx"] + (l["tx"] - l["sx"]) * frac
-                y = l["sy"] + (l["ty"] - l["sy"]) * frac - math.sin(frac * math.pi) * 120
-                art.pixel_disc(surf, x + ox, y + oy, 9, col)
-            else:
-                art.pixel_disc(surf, l["tx"] + ox, l["ty"] + oy - (1 - frac) * 260, 9, col)
-        for m in self.mines:
-            on = (m["t"] // max(4, m["t"] // 30)) % 2 == 0 if m["t"] < 240 else (m["t"] // 30) % 2 == 0
-            art.pixel_disc(surf, m["x"] + ox, m["y"] + oy, 12, (60, 56, 70))
-            art.pixel_disc(surf, m["x"] + ox, m["y"] + oy, 6, (255, 70, 50) if on else (120, 30, 30))
-            if m["t"] < 150 and on:
-                art.pixel_ring(surf, m["x"] + ox, m["y"] + oy, 92, (255, 110, 60), density=0.4)
-        # beams: telegraphs first, live beams on top
-        for x1, y1, x2, y2, w, dmg, active, col, thin, wide in self.beam_list:
-            if active:
-                continue
-            if wide:
-                self._band(surf, x1 + ox, y1 + oy, x2 + ox, y2 + oy, w, (84, 20, 26))
-                art.pixel_line(surf, x1 + ox, y1 + oy, x2 + ox, y2 + oy, col)
-            elif (self.frame // 3) % 2 == 0 or w > 10:
-                art.pixel_line(surf, x1 + ox, y1 + oy, x2 + ox, y2 + oy, col)
-        for x1, y1, x2, y2, w, dmg, active, col, thin, wide in self.beam_list:
-            if not active:
-                continue
-            self._band(surf, x1 + ox, y1 + oy, x2 + ox, y2 + oy, w, col)
-            self._band(surf, x1 + ox, y1 + oy, x2 + ox, y2 + oy, max(4, w * 0.4), (255, 252, 230))
-        for w in self.walls:
-            r = w["rect"].move(ox, oy)
-            if w["t"] > 0:
-                if (w["t"] // 5) % 2 == 0:
-                    pygame.draw.rect(surf, (255, 90, 90), r, 3)
-            elif w.get("kind") == "bone":
-                pygame.draw.rect(surf, (200, 190, 168), r)
-                pygame.draw.rect(surf, (250, 244, 228), r, 3)
-                pygame.draw.rect(surf, (120, 110, 96), r.inflate(-12, -12), 2)
-            else:
-                pygame.draw.rect(surf, (96, 100, 130), r)
-                pygame.draw.rect(surf, (150, 156, 190), r, 3)
-                pygame.draw.rect(surf, (90, 230, 255), r.inflate(-14, -14), 2)
-        for b in self.bushes:
-            fade = b["life"] < 60 and (b["life"] // 4) % 2 == 0
-            if not fade:
-                art.pixel_disc(surf, b["x"] + ox, b["y"] + oy, b["r"], (50, 110, 44))
-                art.pixel_disc(surf, b["x"] + ox, b["y"] + oy, b["r"] - 6, (110, 180, 70))
-                for k in range(6):
-                    a = k * 1.047 + b["x"]
-                    surf.fill((220, 240, 160), (int(b["x"] + math.cos(a) * (b["r"] + 2)) + ox, int(b["y"] + math.sin(a) * (b["r"] + 2)) + oy, 3, 3))
-
-    def _band(self, surf, x1, y1, x2, y2, w, color):
-        dx, dy = x2 - x1, y2 - y1
-        d = math.hypot(dx, dy) or 1.0
-        nx, ny = -dy / d * w / 2.0, dx / d * w / 2.0
-        pygame.draw.polygon(surf, color, [(x1 + nx, y1 + ny), (x2 + nx, y2 + ny), (x2 - nx, y2 - ny), (x1 - nx, y1 - ny)])
-
-    def draw_fx(self, surf, ox, oy):
-        for f in self.fx:
-            k = f["kind"]
-            if k == "ring":
-                t0 = f.setdefault("t0", f["ttl"])
-                rr = f["r"] + (f["max_r"] - f["r"]) * (1 - f["ttl"] / float(t0))
-                art.pixel_ring(surf, f["x"] + ox, f["y"] + oy, rr, f["color"], density=0.9)
-            elif k == "ringline":
-                art.pixel_ring(surf, f["x"] + ox, f["y"] + oy, max(2, f["r"]), f["color"], density=0.8)
-            elif k == "line":
-                art.pixel_line(surf, f["x"] + ox, f["y"] + oy, f["x2"] + ox, f["y2"] + oy, f["color"])
-            elif k == "beamflash":
-                self._band(surf, f["x"] + ox, f["y"] + oy, f["x2"] + ox, f["y2"] + oy, 9, (255, 250, 200))
-            elif k == "edgewarn":
-                y = f["y"]
-                for x in range(0, SCREEN, 24):
-                    if any(abs(x + 12 - g) < 66 for g in f["gaps"]):
-                        continue
-                    surf.fill((255, 70, 70), (x, int(y) - 6, 18, 12))
-            elif k == "edgewarn2":
-                side, gaps = f["side"], f["gaps"]
-                for p in range(0, SCREEN, 24):
-                    if any(abs(p + 12 - g) < 66 for g in gaps):
-                        continue
-                    if (f["ttl"] // 4) % 2:
-                        continue
-                    if side == 0:
-                        surf.fill((255, 70, 70), (p, 0, 18, 12))
-                    elif side == 2:
-                        surf.fill((255, 70, 70), (p, SCREEN - 12, 18, 12))
-                    elif side == 3:
-                        surf.fill((255, 70, 70), (0, p, 12, 18))
-                    else:
-                        surf.fill((255, 70, 70), (SCREEN - 12, p, 12, 18))
+   

@@ -1,6 +1,4 @@
 -- Project Strikers - MySQL / MariaDB schema (XAMPP)
--- Import with phpMyAdmin (Import tab) or: mysql -u root < strikers_schema.sql
--- The game also runs this file automatically on start, so importing is optional.
 
 CREATE DATABASE IF NOT EXISTS strikers CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE strikers;

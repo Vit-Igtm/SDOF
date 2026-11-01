@@ -1,5 +1,5 @@
 """
-Project Strikers - RPG theme/pixel art.
+Project Strikers - UI layer: RPG theme and pixel art.
 
 """
 import math
@@ -33,13 +33,7 @@ PANEL_FILL = (38, 26, 40)
 PANEL_FILL_LT = (54, 38, 54)
 GREY = (150, 146, 158)
 
-RARITY_COLORS = {
-    "common": (196, 196, 204),
-    "uncommon": (96, 206, 108),
-    "rare": (86, 156, 255),
-    "epic": (194, 106, 244),
-    "legendary": (255, 172, 44),
-}
+from core.game_data import RARITY_COLORS      # noqa: E402  (single source of truth lives in core)
 
 # ----------------------------------------------------------------------------
 # Fonts 

@@ -1,13 +1,12 @@
 """
-Project Strikers - every enemy, mini-boss and boss.
+Project Strikers - CORE layer: every enemy, mini-boss and boss (behaviour only).
 
 """
 import math
 import random
 
-import strikers_art as art
-import strikers_data as data
-from strikers_util import clamp, seg_dist, wrap_angle
+from core import game_data as data
+from core.util import clamp, wrap_angle
 
 SCREEN = 900
 TAU = math.pi * 2
@@ -1519,139 +1518,4 @@ class Enemy:
     def start_blink_c(self, off):
         self.start_blink(off)
 
-    # ============================================================== drawing
-    def sprite_mode(self):
-        run = self.run
-        if self.flash > 0:
-            return "flash"
-        if run.freeze > 0:
-            return "frozen"
-        if self.stone:
-            return "stone"
-        if self.ethereal:
-            return "ghost"
-        if self.ai == "vclone":
-            return "ghost"
-        if self.buffed and not (self.boss or self.mini):
-            return "buffed"
-        if self.ai in ("boss", "construct") and self.phase == 2:
-            return "rage"
-        return "normal"
-
-    def draw_tele(self, surf):
-        """Ground telegraphs drawn beneath sprites."""
-        run = self.run
-        a = self.ai
-        if a == "sniper" and self.state == "lock":
-            if self.timer > 24 or (self.timer // 3) % 2 == 0:
-                ex, ey = self.x + math.cos(self.aim) * 1400, self.y + math.sin(self.aim) * 1400
-                art.pixel_line(surf, self.x, self.y, ex, ey, (255, 60, 60) if self.timer <= 24 else (255, 150, 150))
-        elif a == "bull" and self.state == "windup":
-            ex, ey = self.x + math.cos(self.aim) * 1000, self.y + math.sin(self.aim) * 1000
-            if (self.timer // 4) % 2 == 0:
-                art.pixel_line(surf, self.x, self.y, ex, ey, (255, 90, 60))
-        elif a == "commander":
-            pulse = 190 + int(4 * math.sin(self.t * 0.1))
-            art.pixel_ring(surf, self.x, self.y, pulse, (255, 214, 80), density=0.45)
-        elif a == "harvester" and self.state == "aim":
-            if (self.timer // 3) % 2 == 0:
-                ex, ey = self.x + math.cos(self.aim) * 560, self.y + math.sin(self.aim) * 560
-                art.pixel_line(surf, self.x, self.y, ex, ey, (255, 90, 60))
-        elif a == "treant" and self.state == "stomp" and (int(self.timer) // 3) % 2 == 0:
-            f = self.hp / self.max_hp
-            for off in ([0.0] if f > 0.5 else [-0.34, 0.0, 0.34]):
-                art.pixel_line(surf, self.x, self.y, self.x + math.cos(self.aim + off) * 640,
-                               self.y + math.sin(self.aim + off) * 640, (200, 120, 60))
-        elif a == "necro":
-            art.pixel_ring(surf, self.x, self.y, self.d["suppress"], (170, 90, 230), density=0.3)
-        elif a == "boss" and self.state == "selfdestruct":
-            pass
-        elif a == "construct" and self.state == "selfdestruct":
-            prog = 1 - self.sd_t / 180.0
-            if (self.sd_t // 5) % 2 == 0:
-                art.pixel_ring(surf, self.x, self.y, 430, (255, 60, 50), density=0.9)
-            art.pixel_ring(surf, self.x, self.y, 430 * prog, (255, 200, 80), density=0.9)
-            art.draw_text(surf, "%.1f" % (self.sd_t / 60.0), (int(self.x), int(self.y) - 120), 60, (255, 90, 70), title=True)
-        elif a == "templar":
-            art.pixel_ring(surf, self.x, self.y, 215, (120, 200, 255), density=0.3)
-        elif a == "stalker":
-            art.pixel_ring(surf, self.x, self.y, 175, (110, 230, 90), density=0.3)
-        elif a == "vespera" and self.state == "nova":
-            frac = self.nova_t / 600.0
-            art.draw_bar(surf, (250, 60, 400, 14), frac, (255, 90, 200))
-            if self.nova_t < 150:
-                g = self.nova_gap
-                for k in range(1, 8):
-                    art.pixel_line(surf, self.x + math.cos(g) * 80 * k * 0.4, self.y + math.sin(g) * 80 * k * 0.4,
-                                   self.x + math.cos(g) * 80 * (k * 0.4 + 0.2), self.y + math.sin(g) * 80 * (k * 0.4 + 0.2),
-                                   (120, 255, 150))
-        elif a == "boss" and self.invuln:
-            art.pixel_ring(surf, self.x, self.y, self.r + 24, (120, 220, 255), density=0.8)
-
-    def draw(self, surf, ox, oy):
-        run = self.run
-        cx, cy = int(self.x) + ox, int(self.y) + oy
-        if self.ai == "burrow" and self.state in ("under", "tele"):
-            for k in range(5):
-                art.pixel_disc(surf, cx - self.facing * k * 7, cy + 6 + (k % 2) * 3, 5 - k // 2, (150, 112, 70))
-            if self.state == "tele":
-                art.pixel_ring(surf, cx, cy, 46 * (1 - self.timer / 34.0), (255, 80, 60), density=0.8)
-            return
-        if not self.hidden:
-            if self.ai == "vespera" and run.dark > 0.55 and run.boss_flash <= 0 and self.state != "nova":
-                pass
-            elif self.ai == "vclone" and run.dark > 0.55 and run.boss_flash <= 0:
-                pass
-            else:
-                spr = art.sprite(self.d["sprite"], self.sprite_mode(), self.facing < 0)
-                bob = 0 if self.ai in ("spinner", "boss") else int(math.sin(self.t * 0.2 + self.angle) * 2)
-                if self.boss or self.mini:
-                    bob = int(math.sin(self.t * 0.08) * 4)
-                if self.ai == "vclone":
-                    spr = pygame_scaled(spr, 0.85)
-                surf.blit(spr, spr.get_rect(center=(cx, cy + bob)))
-        if self.d.get("shield"):
-            ang = math.atan2(self.sy, self.sx)
-            art.pixel_arc(surf, cx, cy, self.r + 8, ang - 1.0, ang + 1.0, (190, 210, 235), thick=2)
-            art.pixel_arc(surf, cx, cy, self.r + 14, ang - 0.8, ang + 0.8, (110, 140, 190), thick=1)
-        elif self.d.get("front_armor") and not self.hidden:
-            ang = math.atan2(self.sy, self.sx)
-            art.pixel_arc(surf, cx, cy, self.r + 8, ang - 0.9, ang + 0.9, (170, 176, 210), thick=1)
-        if self.eshield > 0:
-            art.pixel_ring(surf, cx, cy, self.r + 6, (120, 220, 255), density=0.7)
-        if self.invuln and (self.boss or self.mini):
-            art.pixel_ring(surf, cx, cy, self.r + 14, (150, 230, 255), density=0.9)
-        if self.stone:
-            art.pixel_ring(surf, cx, cy, self.r + 10, (160, 160, 180), density=0.7)
-        a = self.ai
-        if a == "vortex":
-            for k in range(3):
-                ang = self.angle + k * 2.094
-                art.pixel_disc(surf, cx + math.cos(ang) * 62, cy + math.sin(ang) * 62, 9, (255, 110, 220))
-            art.pixel_ring(surf, cx, cy, 300, (150, 90, 220), density=0.25)
-        elif a == "crawler" and self.state == "fuse" and (self.timer // 4) % 2 == 0:
-            art.pixel_ring(surf, cx, cy, 78, (255, 100, 60), density=0.7)
-        elif a == "pod":
-            art.pixel_arc(surf, cx, cy, 30, -1.57, -1.57 + 6.28 * self.timer / 600.0, (255, 190, 60), thick=1)
-        elif a == "harvester" and self.state in ("hook", "pull"):
-            art.pixel_line(surf, cx, cy, int(self.hx) + ox, int(self.hy) + oy, (170, 170, 190))
-            art.pixel_disc(surf, int(self.hx) + ox, int(self.hy) + oy, 9, (220, 220, 235))
-        elif a == "executioner" and self.state == "chop":
-            ex, ey = cx + math.cos(self.aim) * 38, cy + math.sin(self.aim) * 38
-            art.pixel_ring(surf, ex, ey, 62 * (1 - self.timer / 26.0) + 4, (255, 90, 90), density=0.8)
-        elif a == "stalker":
-            pass
-        if self.burn > 0:
-            surf.fill((255, 120, 30), (cx - 3, cy - self.r - 8, 6, 6))
-        if self.boss or self.mini or self.hidden:
-            return
-        if self.hp < self.max_hp or self.elite:
-            w = max(24, self.r * 2)
-            art.draw_bar(surf, (cx - w // 2, cy - self.r - 14, w, 7), self.hp / self.max_hp,
-                         (214, 60, 60) if not self.elite else (190, 100, 240))
-
-
-def pygame_scaled(img, k):
-    import pygame
-    w, h = img.get_size()
-    return pygame.transform.scale(img, (max(1, int(w * k)), max(1, int(h * k))))
+   
