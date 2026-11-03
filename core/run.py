@@ -20,7 +20,7 @@ SENTRY_LASER_CD = 5 * FPS
 
 
 SCREEN = 900
-TIME_SCALE = float(os.environ.get("STRIKERS_TIME_SCALE", "1"))   # dev: >1 fast-forwards the wave timeline
+TIME_SCALE = float(os.environ.get("STRIKERS_TIME_SCALE", "3"))   # dev: >1 fast-forwards the wave timeline
 RAR = data.RARITIES
 TAU = math.pi * 2
 SUSTAIN_CAP = 0.05          # lifesteal + regeneration can heal at most 5% max HP per second
@@ -33,7 +33,7 @@ class Run(WorldMixin):
         self.perks, self.keys, self.map = perks, keybinds, map_def
         self.diff = map_def.get("diff", 1.0)
         self.hz = 1.0 + (self.diff - 1.0) * 0.5            # extra bite for boss / mini-boss projectiles
-        self.god = False                                    # dev switch for tests
+        self.god = True                                    # dev switch for tests
         self.frame, self.time = 0, 0.0
         self.status = "playing"            # playing | levelup | won | dead
         self.px, self.py, self.pr = 450.0, 640.0, 14
@@ -135,7 +135,6 @@ class Run(WorldMixin):
         self.dodge = 0.02 * P("dodge")
         self.regen = 0.5 * P("regen")
         self.pen = 0.06 * P("pen")
-        self.knock = 1.2 * P("pen")
         self.aoe_lvl = P("aoe")
         old_f = set(self.fusions)
         self.fusions = {f[2] for f in data.FUSIONS if P("synergy") > 0 and S(f[0]) and S(f[1])}
@@ -401,7 +400,7 @@ class Run(WorldMixin):
         if self.cds.get(sid, 0) > 0:
             return False
         if self.S("blood_magic"):
-            cost = min(0.15 * self.max_hp, self.hp - 1.0)       # never kills: you are left with 1 HP at worst
+            cost = min(0.15 * self.max_hp, self.hp - 1.0)       # Blood magic will not kill player but will be left at 1hp
             if cost > 0:
                 self.hp -= cost
                 self.float_text(self.px, self.py - 40, "-%d HP" % cost, (200, 40, 70))
@@ -588,8 +587,7 @@ class Run(WorldMixin):
             self.fx.append(dict(kind="line", x=src_e.x, y=src_e.y, x2=e.x, y2=e.y, ttl=8, color=(190, 230, 255)))
 
     def bullet_hit(self, b, e, fr=0.0):
-        kb = (b.vx / 11.0 * self.knock, b.vy / 11.0 * self.knock) if self.knock else None
-        self.damage_enemy(e, b.dmg, b.crit, "bullet", kb, fr)
+        self.damage_enemy(e, b.dmg, b.crit, "bullet", None, fr)      # projectiles never knock enemies back
         self.spark(b.x, b.y, (255, 240, 160) if not b.crit else (255, 130, 240), 2 if b.weapon else 3)
         if b.shard:
             return
