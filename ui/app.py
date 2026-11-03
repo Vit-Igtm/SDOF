@@ -363,12 +363,14 @@ class App:
     def draw(self):
         getattr(self, "dr_" + self.state)()
 
+    def draw_logo(self, y, scale=1.0, bob=0):
+        """The PROJECT / STRIKERS logo, shared by the title and login screens."""
+        T(screen, "PROJECT", (450, y + bob), int(76 * scale), art.PARCHMENT, title=True)
+        T(screen, "STRIKERS", (450, y + int(85 * scale) + bob), int(112 * scale), GOLD, title=True)
+
     def dr_title(self):
         screen.blit(self.bg_title, (0, 0))
-        bob = int(math.sin(self.frame * 0.04) * 4)
-        T(screen, "PROJECT", (450, 150 + bob), 76, art.PARCHMENT, title=True)
-        T(screen, "STRIKERS", (450, 235 + bob), 112, GOLD, title=True)
-        T(screen, "~ slay the swarm, claim the realm ~", (450, 320), 24, art.PARCHMENT_DK)
+        self.draw_logo(150, 1.0, int(math.sin(self.frame * 0.04) * 4))
         if (self.frame // 30) % 2 == 0:
             T(screen, "- CLICK TO BEGIN -", (450, 800), 34, CREAM)
 
@@ -386,18 +388,17 @@ class App:
         create = self.auth_mode == "create"
         rects = self.auth_rects()
         art.draw_panel(screen, (170, 90, 560, 680 if create else 590), art.PANEL_FILL, GOLD_DK, hi=(255, 214, 120))
-        T(screen, "ADVENTURER'S GUILD", (450, 160), 46, GOLD, title=True)
-        T(screen, "Sign your name in the ledger to enter the realm.", (450, 215), 18, art.PARCHMENT_DK)
+        self.draw_logo(125, 0.5)
+        T(screen, "Sign your name in the ledger to enter the realm.", (450, 232), 18, art.PARCHMENT_DK)
         art.draw_button(screen, rects["tab_login"], "LOG IN", self.hover(rects["tab_login"]), size=24, selected=not create)
         art.draw_button(screen, rects["tab_create"], "CREATE ACCOUNT", self.hover(rects["tab_create"]), size=22, selected=create)
         self.input_box(rects["user"], "Hero name", self.fields["user"], self.focus == "user")
         self.input_box(rects["pass"], "Password", self.fields["pass"], self.focus == "pass", True)
         if create:
             self.input_box(rects["confirm"], "Confirm password", self.fields["confirm"], self.focus == "confirm", True)
-        self.button(rects["submit"], "ENTER THE REALM" if not create else "FORGE ACCOUNT", 26)
+        self.button(rects["submit"], "ENTER THE REALM" if not create else "ENTER", 26)
         if self.auth_msg[0]:
             T(screen, self.auth_msg[0], (450, rects["submit"].bottom + 28), 20, self.auth_msg[1])
-        T(screen, "TAB switches fields  -  ENTER confirms", (450, 748 if create else 658), 16, art.PARCHMENT_DK)
 
     def dr_lobby(self):
         screen.blit(self.bg_lobby, (0, 0))
