@@ -46,10 +46,7 @@ def exp_needed(level):
 
 
 # ----------------------------------------------------------------------------
-# Permanent skill tree (kept forever, bought with Gold)
-#   cost of next rank = base + step * current_rank
-#   req = (perk_code, min_rank) that must be owned first
-#   tier = row in the tree (0 top .. 2 bottom); max 3 perks per row
+# Permanent skill tree 
 # ----------------------------------------------------------------------------
 PERK_BRANCHES = [
     {"id": "offense", "name": "Offense"},
@@ -132,8 +129,6 @@ def perk_cost(code, rank):
 
 # ----------------------------------------------------------------------------
 # Temporary run skills 
-#   slot="weapon": counts toward MAX_WEAPONS      slot="active": MAX_ACTIVES (hotkeys 1-3)
-#   needs="active": only offered once you own a castable active skill
 # ----------------------------------------------------------------------------
 def _s(id, name, desc, rarity, mx=1, kind="Offense", custom=False, slot=None, needs=None):
     return dict(id=id, name=name, desc=desc, rarity=rarity, max=mx, kind=kind, custom=custom, slot=slot, needs=needs)
@@ -289,11 +284,6 @@ ENEMIES = {
 # Enemy type announced when first spawned
 # ----------------------------------------------------------------------------
 # Maps 
-#   requires:     map id whose boss must be beaten before this one unlocks
-#   diff:         difficulty multiplier for this map's mini-bosses and boss scales with level
-#   threat_curve: (seconds, threat cap) points, linearly interpolated
-#   phases:       wave phases; `types` are trickle weights, `forms` are formation weights
-#   minis:        pool of mini-bosses - TWO different ones are picked each run
 # ----------------------------------------------------------------------------
 RUN_SECONDS = 20 * 60
 MINI_FIRST_AT = 5 * 60          # first mini-boss; the next one comes 5:00 after it is defeated

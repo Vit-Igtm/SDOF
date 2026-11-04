@@ -1,16 +1,13 @@
 """
 Project Strikers - DATABASE layer: the Repository pattern.
 
-`Repository` is the ONLY class that talks to MySQL / MariaDB (XAMPP). Every public
-method is one atomic data operation (one transaction). It contains SQL and nothing
-else: validation, password hashing and game rules belong to services/.
 """
 import os
 
 try:
     import mysql.connector as mysql
     from mysql.connector import errors as mysql_errors
-except ImportError:                                   # reported with a friendly message in Repository()
+except ImportError:                                  
     mysql = None
     mysql_errors = None
 

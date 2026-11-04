@@ -1,9 +1,7 @@
 """
 Project Strikers - UI layer: paints a Run.
 
-`RunRenderer` only READS the state of a `core.run.Run` (positions, timers, lists of
-bullets / pools / effects) and draws it. It never changes game rules, so the engine
-can be tested with no window at all.
+`RunRenderer` only READS the state  (positions, timers, lists of bullets / pools / effects) and draws it.
 """
 import math
 import random
